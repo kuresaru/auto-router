@@ -1,20 +1,40 @@
-use std::{os::raw::c_int, thread};
+#[macro_use]
+extern crate lazy_static;
+
+use std::{fs::File, io::Read, os::raw::c_int, thread};
 
 use redis::PubSubCommands;
+use serde::Deserialize;
 
 mod myipset;
 
 pub type ProcessCallback = Option<unsafe extern "C" fn(ack: u8, ip: u32)>;
 
 extern "C" {
-    pub fn run_nfq() -> c_int;
+    pub fn run_nfq(qid: u16) -> c_int;
     pub fn set_process_cb(cb: ProcessCallback);
 }
 
-const REDIS_SERVER: &str = "redis://192.168.6.1/";
-const SYN_EX: &str = "3";
-const ACK_EX: &str = "86400";
-const IPSET: &str = "proxy1";
+#[derive(Deserialize)]
+struct Config {
+    redis_server: String,
+    syn_expire: String,
+    ack_expire: String,
+    ipset: String,
+    nfq_id: u16,
+}
+
+lazy_static! {
+    static ref CONFIG: Config = {
+        let mut cfg_file = File::open("config.yml").expect("Failed to open config.yml");
+        let mut cfg_text = String::new();
+        cfg_file
+            .read_to_string(&mut cfg_text)
+            .expect("Failed to read config.yml");
+        let cfg: Config = serde_yaml::from_str(&cfg_text).expect("Config error");
+        cfg
+    };
+}
 
 static mut RDS_CONN: Option<redis::Connection> = None;
 static mut RDS_CONN_PS: Option<redis::Connection> = None;
@@ -26,7 +46,7 @@ fn mark_syn(con: &mut redis::Connection, key_syn: &String, key_ack: &String) {
         if !exists {
             println!("{}", key_syn);
             let _: () = redis::cmd("SETEX")
-                .arg(&[key_syn, SYN_EX, "syn"])
+                .arg(&[key_syn, &CONFIG.syn_expire, "syn"])
                 .query(con)
                 .unwrap();
         }
@@ -37,7 +57,7 @@ fn mark_ack(con: &mut redis::Connection, key_syn: &String, key_ack: &String) {
     println!("{}", key_ack);
     let _: () = redis::cmd("DEL").arg(key_syn).query(con).unwrap();
     let _: () = redis::cmd("SETEX")
-        .arg(&[key_ack, ACK_EX, "ack"])
+        .arg(&[key_ack, &CONFIG.ack_expire, "ack"])
         .query(con)
         .unwrap();
 }
@@ -72,8 +92,8 @@ fn exp_cb(msg: redis::Msg) -> redis::ControlFlow<()> {
                     (ip >> 8) as u8,
                     ip as u8
                 );
-                myipset::add(IPSET, &ip);
-                println!("{} expired, add {} to {}", &payload, &ip, IPSET);
+                myipset::add(&CONFIG.ipset, &ip);
+                println!("{} expired, add {} to {}", &payload, &ip, &CONFIG.ipset);
             }
         }
     }
@@ -82,7 +102,7 @@ fn exp_cb(msg: redis::Msg) -> redis::ControlFlow<()> {
 
 fn nfq_thread() {
     unsafe {
-        run_nfq();
+        run_nfq(CONFIG.nfq_id);
     }
 }
 
@@ -95,15 +115,15 @@ fn rcb_thread() {
 }
 
 fn main() {
-    let client = redis::Client::open(REDIS_SERVER).unwrap();
+    let redis_server: &str = CONFIG.redis_server.as_str();
+    let client = redis::Client::open(redis_server).unwrap();
     unsafe {
         RDS_CONN = Some(client.get_connection().unwrap());
         RDS_CONN_PS = Some(client.get_connection().unwrap());
         set_process_cb(Some(cb));
     }
-    let _rcb_th = thread::spawn(rcb_thread);
-    // let nfq_th = thread::spawn(nfq_thread);
-    // nfq_th.join().unwrap();
-    println!("nfq started");
-    nfq_thread();
+    let rcb_th = thread::spawn(rcb_thread);
+    let nfq_th = thread::spawn(nfq_thread);
+    rcb_th.join().unwrap();
+    nfq_th.join().unwrap();
 }

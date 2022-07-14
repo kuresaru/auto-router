@@ -28,7 +28,6 @@ typedef unsigned char byte;
 #define MAX_BUFFER_SIZE 65535
 
 static byte nfq_buffer[MAX_BUFFER_SIZE] __attribute__((aligned));
-static uint16_t queue_id = 0;
 
 static struct nfq_handle *setup_netfilter_queue()
 {
@@ -57,16 +56,16 @@ error:
     return NULL;
 }
 
-static struct nfq_q_handle *create_q_handle(struct nfq_handle *h, nfq_callback *cb, void *data)
+static struct nfq_q_handle *create_q_handle(struct nfq_handle *h, nfq_callback *cb, uint16_t qid)
 {
-    struct nfq_q_handle *qh = nfq_create_queue(h, queue_id++, cb, data);
+    struct nfq_q_handle *qh = nfq_create_queue(h, qid, cb, NULL);
 
     if (UNLIKELY(NULL == qh))
     {
-        fprintf(stderr, "Error creating queue %d\n", queue_id - 1);
+        fprintf(stderr, "Error creating queue %d\n", qid);
         goto error;
     }
-    printf("create queue %d\n", queue_id - 1);
+    printf("AutoRouter listening nfq id %d\n", qid);
     if (UNLIKELY(-1 == nfq_set_mode(qh, NFQNL_COPY_PACKET, MAX_BUFFER_SIZE)))
     {
         fprintf(stderr, "Error setting NFQ copy mode\n");
@@ -123,18 +122,17 @@ void set_process_cb(process_callback *cb)
     process_cb = cb;
 }
 
-int run_nfq()
+int run_nfq(uint16_t qid)
 {
     struct nfq_handle *nfq_h;
     struct nfq_q_handle *qh;
     int fd, rv;
 
-    printf("run nfq\n");
     nfq_h = setup_netfilter_queue();
     if (!nfq_h)
         return -1;
 
-    qh = create_q_handle(nfq_h, &process_packet, NULL);
+    qh = create_q_handle(nfq_h, &process_packet, qid);
     if (!qh)
         return -1;
 

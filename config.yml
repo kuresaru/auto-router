@@ -1,0 +1,5 @@
+redis_server: "redis://192.168.6.1/"
+syn_expire: "3"
+ack_expire: "86400"
+ipset: "autorouter"
+nfq_id: 0
