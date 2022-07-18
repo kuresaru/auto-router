@@ -1,0 +1,14 @@
+[Unit]
+After=network.target
+
+[Service]
+ExecStart=/root/auto-router/auto-router
+WorkingDirectory=/root/auto-router/
+Type=simple
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auto-router
+
+[Install]
+WantedBy=multi-user.target
