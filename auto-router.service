@@ -1,5 +1,5 @@
 [Unit]
-After=network.target
+After=network.target redis-server.service
 
 [Service]
 ExecStart=/root/auto-router/auto-router
@@ -9,6 +9,8 @@ User=root
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=auto-router
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

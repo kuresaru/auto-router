@@ -10,6 +10,8 @@ redis = "0.21.5"
 lazy_static = "1.4.0"
 serde = { version = "1.0.137", features = ["derive"] }
 serde_yaml = "0.8.25"
+log = "0.4"
+simple_logger = "0.5"
 
 [build-dependencies]
 cc = "1.0.73"
